@@ -129,7 +129,7 @@ def extract_FCD(data,wwidth=1000,maxNwindows=100,olap=0.9,coldata=False,mode='co
            
     
     #return CV_centered,corr_vectors,shift
-    return FCD,corr_vectors,shift#agregue CV_centered
+    return FCD,corr_vectors,shift
 
 
 

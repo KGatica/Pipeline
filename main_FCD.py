@@ -52,10 +52,10 @@ Trun=np.arange(0,runTime,runInt)  # Vector con valores de tiempo
 #%%
 
 # Calculo de sincronía de fase total (población completa)
-PLVtot=np.zeros((nnodes,nnodes))        
+PStot=np.zeros((nnodes,nnodes))        
 for ii in range(nnodes):
     for jj in range(ii):
-        PLVtot[ii,jj]=np.abs(np.mean(np.exp(1j*np.diff(phase[[ii,jj],:],axis=0))))
+        PStot[ii,jj]=np.abs(np.mean(np.exp(1j*np.diff(phase[[ii,jj],:],axis=0))))
         
 phasesynch=np.abs(np.mean(np.exp(1j*phase),0))
 MPsync=np.mean(phasesynch)  #Media de la fase en el tiempo
@@ -77,8 +77,8 @@ FCD,Pcorr,shift=fcd.extract_FCD(phase[:,::],maxNwindows=2000,wwidth=WW,olap=0.5,
 #Varianza de los valores encontrados en la FCD
 VarFCD = np.var(FCD[np.tril_indices(len(Pcorr),k=-5)])
 
-# np.save(Path+fileName+"FCD%g.npy"%(WW),FCD)
-# np.save(Path+fileName+"FCs%g.npy"%(WW),Pcorr)
+# np.save(Path+"FCD%g-"%WW+fileName+".npy",FCD)
+# np.save(Path+"FCs%g-"%WW+fileName+".npy"%(WW),Pcorr)
 
 #%% Calculo de PCA sobre la matriz de FCs
 pcac = PCA()
@@ -87,6 +87,8 @@ U = pcac.components_.T #en caso de que quede negativo revisar y multiplicar por 
 cond1 = np.sum(pcac.explained_variance_ratio_[0:10])
 allvar = pcac.explained_variance_ratio_
 
+cummVarexp=np.cumsum(allvar)
+n_eig=np.where(cummVarexp>0.8)[0][0]  #Num de EigVals que explican 80%
 
 
 #%% Grafico de las 'ncomp' primeros eigenvectors (en forma de matriz)
@@ -108,12 +110,13 @@ for k in range(ncomp):
     axi.set_xticklabels((),())
     axi.set_yticklabels((),())
     plt.imshow(ConectF,cmap='jet',vmin=-vmax,vmax=vmax)  
+    plt.title("Var expl %.4g"%allvar[k],size='x-small')
 axcb=plt.subplot(1,ncomp+1,k+2)
 axcb.set_aspect(6)
 plt.colorbar(mappable=axi.get_images()[0],cax=axcb,panchor=(0,0.2))
 
             
-plt.tight_layout(pad=0.2,w_pad=0.1)
+plt.tight_layout(pad=0.2,w_pad=0.2)
 # plt.savefig(Path+fileName+'pca%g.png'%WW,dpi=300)
 
 #%% Plot de algunas FCs, de 5 en 5
@@ -135,9 +138,11 @@ for k,n in enumerate(IndexFc):
     #axi.set_title('FCt=%s'%n)
     axi.set_xticklabels((),())
     axi.set_yticklabels((),())
-    axi.grid('off')
+    axi.grid(False)
     FCMatrix[:,:,k] = FCreconst
+plt.tight_layout(pad=0.2,w_pad=0.2,h_pad=0.2)
 # plt.savefig(Path+fileName+'FCs%g.png'%WW,dpi=200)
+
 
 #%%  Clustering de FCs
 #Parametros del clustering
@@ -147,17 +152,28 @@ dc = 0.02    #   parametro dc del clustering
 alpha = 0.02   #Umbral de confianza para el fit powerlaw
 # Computing PCA
 pca = PCA(n_components=npcs)
+
+# Computing distance matrix on PC space
+# ANTIGUO (¿malo??)
+# pca.fit(Pcorr.T)#pca to FCs
+# pcs = pca.components_
+# distmat = distance.cdist(pcs.T, pcs.T, 'euclidean')
+
+#NUEVO
 pca.fit(Pcorr)#pca to FCs
 pcs = pca.components_
-
 projData=pca.fit_transform(Pcorr)
-# Computing distance matrix on PC space
 distmat = distance.cdist(projData, projData, 'euclidean')  #Matriz de 
+
+
+
 # distmat = FCD[indw]
 rho = dclus.compute_rho(distmat,dc)
 delta = dclus.compute_delta(distmat, rho)
 
-if np.sum(FCD>0.05): 
+# El clustering se lleva adelante solo si hay diferencias significativas en la FCD
+if np.sum(FCD>0.05):
+    # Y también si los 10 primeros PCs explican varexp de la varianza
     if cond1 >=varexp:
         # Clustering: Computing thresholds, finding centroids and assigning variables to clusters
         nclus,cluslabels,centid,threshold = dclus.find_centroids_and_cluster(distmat,rho,delta,alpha)    
@@ -180,9 +196,10 @@ if np.sum(FCD>0.05):
         
         ax1=plt.subplot(322,projection='3d') # pc space
         for i in range(nclus):
-            plt.plot(pcs[0,cluslabels==i+1],pcs[1,cluslabels==i+1],pcs[2,cluslabels==i+1],'.')
-        plt.xlim([0.9*pcs[0,:].min(),1.1*pcs[0,:].max()])
-        ax1.set_zlim([0.9*pcs[1,:].min(),1.1*pcs[1,:].max()])
+            # plt.plot(pcs[0,cluslabels==i+1],pcs[1,cluslabels==i+1],pcs[2,cluslabels==i+1],'.')
+            plt.plot(projData[cluslabels==i+1,0],projData[cluslabels==i+1,1],projData[cluslabels==i+1,2],'.')
+        # plt.xlim([0.9*pcs[0,:].min(),1.1*pcs[0,:].max()])
+        # ax1.set_zlim([0.9*pcs[1,:].min(),1.1*pcs[1,:].max()])
         
         plt.subplot(324)
         plt.imshow(distmat,cmap='jet')
@@ -198,15 +215,15 @@ if np.sum(FCD>0.05):
         axClus.set_xticks(())
         
         axPCA=fig4.add_axes((0.15,0.07,0.7,0.04))
-        axPCA.imshow(pcs,cmap='jet',aspect='auto')
+        axPCA.imshow(projData.T,cmap='jet',aspect='auto')
         
                                 
         plt.imshow
         
         plt.show()
-        # plt.title('Hay %s ventanas consecutivas muy diferentes'%len(Higdif))
+        
         # plt.savefig(Path+fileName+"-clust.png",dpi=200)  
-        plt.close(4)
+
         plt.figure(5)
         plt.clf()
         for k in range(1,nclus+1):
@@ -228,9 +245,9 @@ if np.sum(FCD>0.05):
             plt.imshow(MedianMatrix,cmap='jet')
             axi.set_xticklabels((),())
             axi.set_yticklabels((),())
-        # plt.savefig(dir_aux+mode+'Allnodes%sMedian-%02d-'%(wwidth0,FileIND)+'g'+FileInit[9:]+'.png',dpi=200)
-        np.savetxt(Path+fileName+'Cluslabels%g.txt'%WW,cluslabels,fmt='%d')
-    else:
+        # plt.savefig(Path+fileName+"-clust%g.png"%WW,dpi=200)  
+        # np.savetxt(Path+fileName+'Cluslabels%g.txt'%WW,cluslabels,fmt='%d')
+    else: #Si los primeros PCs explican menos de varexp, no hay clusters
         nclusters = 0
 
         fig4=plt.figure(4,figsize=(6,10))
@@ -253,72 +270,45 @@ if np.sum(FCD>0.05):
         axPCA.imshow(pcs,cmap='jet',aspect='auto')
         
         plt.show()
-        # plt.savefig(Path+fileName+"-clust.png",dpi=200)  
-        plt.close(4)  
-else:
+        # plt.savefig(Path+fileName+"-clust%g.png"%WW,dpi=200)  
+else:  # Si no hay diferencias en la FCD, hay un solo cluster
     nclusters = 1
 # =============================================================================
 #             Create .txt to quantify clusters and eigenvals to pca
 # =============================================================================
-# file_aux3 = mode+'%sParametersLast%02d'%(wwidth0,FileIND)
-print('hay n clus',G,nclusters)
-# libFCD.savetxtCluster(G,nclus,dir_aux,file_aux3)
-aux_eig = [sum(allvar[0:j]) for j in range(len(allvar)+1)]
-if (aux_eig[-1])>=varexp:
-    n_eig[indw] = int(np.where(np.array(aux_eig)>=varexp)[0][0]+1)
-else:
-    n_eig[indw] = 0 #ie no hay!
-# file_aux4 = mode+'eigval'+'%sParametersLast%02d'%(wwidth0,FileIND)
-# libFCD.savetxtCluster(G,eig_val,dir_aux,file_aux4)
-    
-Tini=1
-Tfin=Trun[-1]/1000 - 1
- #               CM = np.loadtxt(dir_aux + "SCmatrix.txt")
 
-plt.figure(6,figsize=(10,14))
+print('hay', nclusters,' clusters en',fileName)
+
+#%% Plot final
+
+plt.figure(6,figsize=(10,12))
 plt.clf()
     
-plt.subplot2grid((6,5),(0,0),rowspan=2,colspan=5)
+plt.subplot2grid((5,5),(0,0),rowspan=2,colspan=5)
 plt.plot(Trun[bound1:bound2],phasesynch)
 plt.title('mean P sync')
     
-plt.subplot2grid((6,5),(2,0),rowspan=2,colspan=2)
-plt.imshow(FCD[1],vmin=0,vmax=0.7,extent=(Tini,Tfin,Tfin,Tini),interpolation='none',cmap='jet')
-plt.title('Sync FCD - w%g'%WW[1])
+plt.subplot2grid((5,5),(2,0),rowspan=2,colspan=2)
+plt.imshow(FCD,vmin=0,vmax=0.7,extent=(0,runTime,runTime,0),interpolation='none',cmap='jet')
+plt.title('Sync FCD - w%g'%WW)
 plt.grid()
-
-plt.subplot2grid((6,5),(2,2),rowspan=2,colspan=2)
-plt.imshow(FCD[0],vmin=0,vmax=0.7,extent=(Tini,Tfin,Tfin,Tini),interpolation='none',cmap='jet')
-plt.title('sync FCD - w%g'%WW[0])
-plt.grid()
-    
-plt.subplot2grid((6,5),(4,4))
-#                plt.imshow(CM,cmap='gray_r',interpolation='none')
+   
+plt.subplot2grid((5,5),(2,2),rowspan=2,colspan=2)
+plt.imshow(PStot+PStot.T+np.eye(nnodes),cmap='jet',vmax=1,vmin=0,interpolation='none')
 plt.gca().set_xticklabels((),())
 plt.gca().set_yticklabels((),())
-plt.title('SC')
+plt.title('total Phase Synch')
 plt.grid()
     
-plt.subplot2grid((6,5),(5,4))
-plt.imshow(PLVtot+PLVtot.T+np.eye(nnodes),cmap='jet',vmax=1,vmin=0,interpolation='none')
-plt.gca().set_xticklabels((),())
-plt.gca().set_yticklabels((),())
-plt.title('total PLV')
-plt.grid()
+ax=plt.subplot2grid((5,5),(2,4))
+ax.hist(FCD[np.tril_indices(len(Pcorr),k=-4)],range=(0,0.25),color='C1')
+ax.text(0.5,0.97,'%.4g'%VarFCD,transform=ax.transAxes,ha='center',va='top',fontsize='xx-small')
     
-ax=plt.subplot2grid((6,5),(2,4))
-ax.hist(FCD[0][np.tril_indices(len(Pcorr[0]),k=-4)],range=(0,0.25),color='C1')
-ax.text(0.5,0.97,'%.4g'%VarFCD[1],transform=ax.transAxes,ha='center',va='top',fontsize='xx-small')
-    
-ax=plt.subplot2grid((6,5),(3,4))
-ax.hist(FCD[1][np.tril_indices(len(Pcorr[1]),k=-4)],range=(0,0.25),color='C1')
-ax.text(0.5,0.97,'%.4g'%VarFCD[0],transform=ax.transAxes,ha='center',va='top',fontsize='xx-small')
-    
-windows=[int(len(Pcorr[0])*f) for f in (0.2, 0.4, 0.6, 0.8)]
-axes2=[plt.subplot2grid((6,5),pos) for pos in ((4,0),(4,1),(4,2),(4,3))]
+windows=[int(len(Pcorr)*f) for f in (0.18, 0.36, 0.54, 0.72, 0.9)]
+axes2=[plt.subplot2grid((5,5),pos) for pos in ((4,0),(4,1),(4,2),(4,3),(4,4))]
 for axi,ind in zip(axes2,windows):
     corrMat=np.zeros((nnodes,nnodes))
-    corrMat[np.tril_indices(nnodes,k=-1)]=Pcorr[0][ind]
+    corrMat[np.tril_indices(nnodes,k=-1)]=Pcorr[ind]
     corrMat+=corrMat.T
     corrMat+=np.eye(nnodes)
         
@@ -327,39 +317,21 @@ for axi,ind in zip(axes2,windows):
     axi.set_xticklabels((),())
     axi.set_yticklabels((),())
     
-    axi.set_title('t=%.2g'%(ind*Tfin/len(Pcorr[0])))
+    axi.set_title('t=%.4g'%(ind*runTime/len(Pcorr)))
     axi.grid()
     
-windows=[int(len(Pcorr[1])*f) for f in (0.2, 0.4, 0.6, 0.8)]
-axes2=[plt.subplot2grid((6,5),pos) for pos in ((5,0),(5,1),(5,2),(5,3))]
-for axi,ind in zip(axes2,windows):
-    corrMat=np.zeros((nnodes,nnodes))
-    corrMat[np.tril_indices(nnodes,k=-1)]=Pcorr[1][ind]
-    corrMat+=corrMat.T
-    corrMat+=np.eye(nnodes)
-        
-    axi.imshow(corrMat,vmin=0,vmax=1,interpolation='none',cmap='jet')
-        
-    axi.set_xticklabels((),())
-    axi.set_yticklabels((),())
-    axi.set_title('t=%.2g'%(ind*Tfin/len(Pcorr[1])))
-    axi.grid()
-
-plt.tight_layout()
+plt.tight_layout(pad=0.5,w_pad=0.5,h_pad=0.5)
     
-plt.savefig(dir_aux+"sync%02d-g%g.png"%(FileIND,float(G)),dpi=200)
+# plt.savefig(Path+fileName+"Plots%g.png"%WW,dpi=200)
     
-
-    
+#%%
 # =============================================================================
 #             Create .txt
 # =============================================================================
-file_global = 'GlobalParameters%02d'%FileIND
-with open(dir_aux+file_global+".txt",'w') as dataf:
-    dataf.write('G PsynchMean PsyncVar PLVMean PLVVar VarFCD VarFCD2'+ "\n")
-    dataf.write("%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\n"%(float(G),MPsync,VarPsync,MPsync,VarPsync,
-                                                VarFCD[0],VarFCD[1],nclusters[0],nclusters[1],
-                                                n_eig[0],n_eig[1]))
+file_global = Path+fileName+'Results.txt'
+with open(file_global,'w') as dataf:
+    dataf.write('PsynchMean\tPsyncVar\tVarFCD\tNclusters\tNeig'+ "\n")
+    dataf.write("%g\t%g\t%g\t%g\t%g\n"%(MPsync,VarPsync,VarFCD,nclusters,n_eig))
 
 
 
