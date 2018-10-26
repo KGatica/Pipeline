@@ -267,7 +267,7 @@ if np.sum(FCD>0.05):
         axFC.set_xticklabels(())
         
         axPCA=fig4.add_axes((0.15,0.08,0.7,0.05))
-        axPCA.imshow(pcs,cmap='jet',aspect='auto')
+        axPCA.imshow(projData.T,cmap='jet',aspect='auto')
         
         plt.show()
         # plt.savefig(Path+fileName+"-clust%g.png"%WW,dpi=200)  
